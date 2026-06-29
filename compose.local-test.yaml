@@ -1,0 +1,51 @@
+# Local end-to-end smoke test of the production image.
+#
+#   1. Build the image:   ./scripts/build-production-image.sh ghost-service:local
+#   2. Start the stack:   docker compose -f compose.local-test.yaml up
+#   3. Open:              http://localhost:2368  (site)
+#                         http://localhost:2368/ghost  (admin — create owner account)
+#   4. Tear down:         docker compose -f compose.local-test.yaml down -v
+#
+# This uses a throwaway MySQL 8 so you can confirm the image works in isolation,
+# before pointing it at staging.
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: ghost_local
+      MYSQL_USER: ghost
+      MYSQL_PASSWORD: ghostpassword
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci
+    ports:
+      - "3307:3306"   # 3307 on host to avoid clashing with an existing local MySQL
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  ghost:
+    image: ghost-service:local
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      # Public URL Ghost generates links against. localhost is fine for a smoke test.
+      url: http://localhost:2368
+      server__host: 0.0.0.0
+      server__port: "2368"
+      database__client: mysql
+      database__connection__host: mysql
+      database__connection__port: "3306"
+      database__connection__user: ghost
+      database__connection__password: ghostpassword
+      database__connection__database: ghost_local
+    ports:
+      - "2368:2368"
+    volumes:
+      - ghost-content:/home/ghost/content
+
+volumes:
+  ghost-content:
